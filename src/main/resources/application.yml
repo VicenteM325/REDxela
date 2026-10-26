@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: redxela
+  datasource:
+    # H2 en modo archivo: los datos sobreviven a los reinicios (carpeta ./data, ignorada por git)
+    url: jdbc:h2:file:./data/redxela;AUTO_SERVER=FALSE
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
