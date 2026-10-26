@@ -1,4 +1,6 @@
 -- Esquema de REDxela (H2). Idempotente: se ejecuta en cada arranque.
+-- Persisten el catálogo y las cuentas de clientes. Los pedidos, las existencias y el almacén viven en
+-- memoria (son estado de la simulación en curso) y se reinician con la aplicación.
 
 CREATE TABLE IF NOT EXISTS merchandise_type (
     code        VARCHAR(30)  PRIMARY KEY,
@@ -22,32 +24,4 @@ CREATE TABLE IF NOT EXISTS customer (
     password_hash VARCHAR(100) NOT NULL,
     service_level INT          NOT NULL CHECK (service_level BETWEEN 1 AND 5),
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS orders (
-    id               BIGINT AUTO_INCREMENT PRIMARY KEY,
-    customer_id      BIGINT      NOT NULL REFERENCES customer(id),
-    service_level    INT         NOT NULL,
-    total_units      INT         NOT NULL,
-    status           VARCHAR(30) NOT NULL,
-    created_at       TIMESTAMP   NOT NULL,
-    started_at       TIMESTAMP,
-    finished_at      TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS order_item (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    order_id   BIGINT NOT NULL REFERENCES orders(id),
-    product_id BIGINT NOT NULL REFERENCES product(id),
-    quantity   INT    NOT NULL CHECK (quantity > 0)
-);
-
--- Ubicaciones físicas del almacén que contienen unidades de un producto
-CREATE TABLE IF NOT EXISTS stock_location (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    product_id BIGINT NOT NULL REFERENCES product(id),
-    aisle      INT    NOT NULL,
-    level      INT    NOT NULL,
-    position   INT    NOT NULL,
-    quantity   INT    NOT NULL CHECK (quantity >= 0)
 );
