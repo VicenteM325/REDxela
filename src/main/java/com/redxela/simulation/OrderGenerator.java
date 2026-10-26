@@ -86,6 +86,12 @@ public class OrderGenerator {
         this.ratePerSimMinute = ratePerSimMinute;
     }
 
+    /** Cliente sintético del nivel dado (el que usan el generador y los escenarios de demostración). */
+    public Customer systemCustomer(ServiceLevel level) {
+        prepare();
+        return generatedCustomers.get(level);
+    }
+
     /** Crea un único pedido aleatorio ahora mismo (útil para pruebas y escenarios). */
     public Order generateOne() {
         prepare();

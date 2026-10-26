@@ -49,3 +49,6 @@ redxela:
     check-every-minutes: 5
     reorder-point: 30
     lot-size: 100
+  deadlock:
+    # Cada cuánto (ms reales) el detector revisa el grafo de espera
+    check-period-ms: 250

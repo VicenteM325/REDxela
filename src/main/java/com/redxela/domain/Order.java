@@ -28,6 +28,7 @@ public class Order {
     private volatile double finishedAt = Double.NaN;
     private volatile double progress;
     private volatile ResourceType waitingFor;
+    private volatile long deferredUntilDone;
     private final AtomicInteger requeues = new AtomicInteger();
 
     /**
@@ -122,6 +123,13 @@ public class Order {
     public double progress() { return progress; }
     public ResourceType waitingFor() { return waitingFor; }
     public int requeues() { return requeues.get(); }
+
+    /**
+     * Id del pedido cuyo término debe esperar este (0 = ninguno). Se usa al resolver un deadlock:
+     * el pedido que cede los recursos no vuelve a competir hasta que el elegido termine.
+     */
+    public long deferredUntilDone() { return deferredUntilDone; }
+    public void deferredUntilDone(long orderId) { this.deferredUntilDone = orderId; }
 
     public void status(OrderStatus status) { this.status = status; }
     public void finishedAt(double finishedAt) { this.finishedAt = finishedAt; }

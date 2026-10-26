@@ -32,6 +32,16 @@ public class WaitingList {
         return orders.contains(order);
     }
 
+    /** Hay en la lista un pedido con ese id. */
+    public synchronized boolean containsId(long id) {
+        for (Order o : orders) {
+            if (o.id() == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Copia de la lista ordenada según la política, del primero al último en ser atendido. */
     public List<Order> ordered(SchedulingPolicy policy, double now) {
         List<Order> copy;

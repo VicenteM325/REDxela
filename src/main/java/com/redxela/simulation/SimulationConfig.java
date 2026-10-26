@@ -1,5 +1,6 @@
 package com.redxela.simulation;
 
+import com.redxela.deadlock.DeadlockDetector;
 import com.redxela.domain.Product;
 import com.redxela.inventory.InventoryArea;
 import com.redxela.inventory.Warehouse;
@@ -126,6 +127,21 @@ public class SimulationConfig {
         // Cuando llega mercadería, el despachador reevalúa los pedidos que esperaban existencias
         inventory.addStockListener(dispatcher::signal);
         return dispatcher;
+    }
+
+    /** Revisa periódicamente si hay pedidos bloqueados entre sí y permite resolver el conflicto. */
+    @Bean(initMethod = "start", destroyMethod = "stop")
+    public DeadlockDetector deadlockDetector(ResourceManager resources, Dispatcher dispatcher, SimClock clock,
+                                             EventLog log,
+                                             @Value("${redxela.deadlock.check-period-ms:250}") long periodMs) {
+        return new DeadlockDetector(resources, dispatcher, clock, log, periodMs);
+    }
+
+    @Bean
+    public ScenarioService scenarioService(OrderService orders, OrderGenerator generator, Dispatcher dispatcher,
+                                           CatalogRepository catalog, InventoryArea inventory,
+                                           ReceptionArea reception, EventLog log) {
+        return new ScenarioService(orders, generator, dispatcher, catalog, inventory, reception, log);
     }
 
     @Bean(destroyMethod = "stop")

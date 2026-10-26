@@ -153,6 +153,14 @@ public class Dispatcher {
         return worker != null && worker.requestPreemption();
     }
 
+    /**
+     * Marca a {@code victim} para que, al volver a la lista de espera, no compita hasta que el
+     * pedido {@code keepOrderId} haya terminado.
+     */
+    public void deferUntilDone(Order victim, long keepOrderId) {
+        victim.deferredUntilDone(keepOrderId);
+    }
+
     /** Se invoca cuando un pedido termina de procesarse (exitosamente), desde el hilo del worker. */
     public void addCompletionListener(Consumer<Order> listener) {
         completionListeners.add(listener);
@@ -220,6 +228,14 @@ public class Dispatcher {
         for (Order order : waiting.ordered(policy, clock.now())) {
             if (running.size() >= maxInFlight) {
                 return;
+            }
+            // Cedió recursos en un deadlock: espera a que termine el pedido elegido para continuar
+            long gate = order.deferredUntilDone();
+            if (gate != 0) {
+                if (runningOrders.containsKey(gate) || waiting.containsId(gate)) {
+                    continue;
+                }
+                order.deferredUntilDone(0);
             }
             // Sin existencias el pedido espera al inventario; no bloquea ni reserva recursos de otros
             if (!stock.hasStock(order)) {
