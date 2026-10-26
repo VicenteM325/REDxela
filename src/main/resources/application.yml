@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: redxela
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Los estáticos del jar llevan Last-Modified fijo (build reproducible), así que el navegador los
+          # daría por frescos casi indefinidamente y mostraría una interfaz vieja tras reconstruir.
+          no-store: true
   datasource:
     # H2 en modo archivo: los datos sobreviven a los reinicios (carpeta ./data, ignorada por git)
     url: jdbc:h2:file:./data/redxela;AUTO_SERVER=FALSE

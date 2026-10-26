@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>REDxela · Centro de distribución</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">RX</span>
+      <div>
+        <h1>REDxela</h1>
+        <p>Centro de distribución · simulación en tiempo real</p>
+      </div>
+    </div>
+    <div class="clock">
+      <span id="conn" class="conn off" title="Conexión en tiempo real">sin conexión</span>
+      <span class="clock-time">Minuto simulado <strong id="clock-now">0.0</strong></span>
+      <span class="clock-speed">velocidad <strong id="clock-speed">1</strong>×</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Conflicto de recursos: solo visible cuando el detector confirma un deadlock -->
+    <section id="deadlock-panel" class="card alert hidden" aria-live="assertive">
+      <h2>⚠ Conflicto de recursos (deadlock) detectado</h2>
+      <p id="deadlock-explanation"></p>
+      <div id="deadlock-resources" class="chips"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Pedido</th><th>Retiene</th><th>Espera</th><th>Bloqueado por</th><th></th></tr></thead>
+          <tbody id="deadlock-rows"></tbody>
+        </table>
+      </div>
+      <p class="hint">Elija qué pedido continúa con los recursos en disputa: los demás los liberan, regresan a la
+        lista de espera y no vuelven a competir hasta que el elegido termine.</p>
+    </section>
+
+    <!-- Controles de la simulación -->
+    <section class="card controls">
+      <h2>Control de la simulación</h2>
+      <div class="control-grid">
+        <label>Política de atención
+          <select id="ctl-policy"></select>
+          <small id="ctl-policy-desc" class="hint"></small>
+        </label>
+        <label>Adquisición de recursos
+          <select id="ctl-mode">
+            <option value="ATOMIC">Atómica · todo o nada (previene deadlock)</option>
+            <option value="ORDERED">Orden global (previene deadlock)</option>
+            <option value="NATURAL">Orden natural (permite deadlock)</option>
+          </select>
+          <small id="ctl-mode-desc" class="hint"></small>
+        </label>
+        <label>Velocidad
+          <select id="ctl-speed">
+            <option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option>
+            <option value="5">5×</option><option value="10">10×</option>
+          </select>
+        </label>
+        <div class="field">
+          <span class="label">Generador automático</span>
+          <div class="row">
+            <button id="gen-toggle" class="btn">Iniciar</button>
+            <input id="gen-rate" type="number" min="0.01" max="100" step="0.1" value="1" aria-label="Pedidos por minuto simulado">
+            <small class="hint">pedidos / min</small>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Reposición automática</span>
+          <div class="row"><button id="restock-toggle" class="btn">Activar</button></div>
+        </div>
+        <div class="field">
+          <span class="label">Escenarios de demostración</span>
+          <div class="row">
+            <button id="scn-deadlock" class="btn danger">Provocar deadlock</button>
+            <button id="scn-contention" class="btn">Provocar contención</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Recursos compartidos</h2>
+      <div id="resources" class="resources"></div>
+    </section>
+
+    <div class="two-col">
+      <section class="card">
+        <h2>Pedidos en proceso <span id="running-count" class="count"></span></h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Pedido</th><th>Nivel</th><th>Unid.</th><th>Tipo</th><th>Estado</th><th>Progreso</th><th>Restante</th></tr></thead>
+            <tbody id="running-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Lista de espera <span id="waiting-count" class="count"></span></h2>
+        <p class="hint">Criterio de orden: <strong id="waiting-criteria"></strong></p>
+        <div class="table-wrap scroll">
+          <table>
+            <thead><tr><th>#</th><th>Pedido</th><th>Nivel</th><th>Unid.</th><th>Tipo</th><th>Espera / objetivo</th><th>Estado</th></tr></thead>
+            <tbody id="waiting-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Estadísticas</h2>
+      <div id="kpis" class="kpis"></div>
+      <div class="two-col tight">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Nivel</th><th>Completados</th><th>Espera prom.</th><th>Proceso prom.</th><th>Cumple objetivo</th></tr></thead>
+            <tbody id="stats-levels"></tbody>
+          </table>
+        </div>
+        <div id="stats-resources" class="usage"></div>
+      </div>
+    </section>
+
+    <div class="two-col">
+      <section class="card">
+        <h2>Nuevo pedido</h2>
+        <div id="auth-box">
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="login" role="tab">Iniciar sesión</button>
+            <button class="tab" data-tab="register" role="tab">Crear cuenta</button>
+          </div>
+          <form id="login-form" class="form">
+            <label>Correo <input name="email" type="email" required autocomplete="username"></label>
+            <label>Contraseña <input name="password" type="password" required autocomplete="current-password"></label>
+            <button class="btn primary" type="submit">Entrar</button>
+          </form>
+          <form id="register-form" class="form hidden">
+            <label>Nombre <input name="name" required maxlength="100"></label>
+            <label>Correo <input name="email" type="email" required autocomplete="username"></label>
+            <label>Contraseña (mín. 6) <input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+            <label>Tipo de servicio <select name="serviceLevel" id="register-level"></select></label>
+            <button class="btn primary" type="submit">Crear cuenta</button>
+          </form>
+        </div>
+        <div id="order-box" class="hidden">
+          <p class="who">Cliente: <strong id="who-name"></strong> · servicio
+            <select id="who-level" aria-label="Nivel de servicio contratado"></select>
+            <button id="logout" class="btn link" type="button">Salir</button></p>
+          <form id="order-form" class="form">
+            <div id="order-lines"></div>
+            <button id="add-line" class="btn link" type="button">+ Añadir producto</button>
+            <label>Forzar nivel (solo pruebas)
+              <select id="order-level"><option value="">Usar el nivel del cliente</option></select>
+            </label>
+            <button class="btn primary" type="submit">Registrar pedido</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Recepción de mercadería</h2>
+        <form id="reception-form" class="form inline">
+          <label>Producto <select id="reception-product" name="productId"></select></label>
+          <label>Unidades <input name="quantity" type="number" min="1" max="10000" value="50" required></label>
+          <button class="btn primary" type="submit">Registrar llegada</button>
+        </form>
+        <form id="truck-form" class="form inline">
+          <label>Camión · lotes <input name="lots" type="number" min="1" max="500" value="40" required></label>
+          <label>Unid. por lote <input name="unitsPerLot" type="number" min="1" max="10000" value="10" required></label>
+          <button class="btn" type="submit">Descargar camión</button>
+        </form>
+        <div id="channel" class="channel"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Almacén e inventario</h2>
+      <div id="warehouse-summary" class="hint"></div>
+      <div id="warehouse-map" class="warehouse"></div>
+      <div id="warehouse-legend" class="chips"></div>
+      <div class="table-wrap scroll short">
+        <table>
+          <thead><tr><th>Producto</th><th>Tipo</th><th>En almacén</th><th>Reservado</th><th>Disponible</th><th>Ubicaciones</th></tr></thead>
+          <tbody id="inventory-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Bitácora de eventos</h2>
+      <ul id="events" class="events"></ul>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
