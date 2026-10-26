@@ -33,8 +33,9 @@ import java.util.function.Consumer;
  * <p>En modo {@link AcquisitionMode#ATOMIC} la política manda de verdad: se intenta tomar todos
  * los recursos del pedido en orden de política y, si no alcanzan, el pedido sigue en la lista de
  * espera. Para que un pedido menos prioritario no se cuele delante de uno más prioritario que
- * está esperando, los recursos de los pedidos bloqueados quedan <em>reservados</em>: solo pasan
- * los que no los necesitan (aprovecha recursos libres sin causar inanición del pedido de adelante).
+ * está esperando, el <em>cuello de botella</em> de cada pedido bloqueado (los recursos agotados que
+ * le faltan) queda reservado: solo pasan los que no lo necesitan, de modo que se aprovechan los
+ * recursos libres sin que el pedido de adelante sea rebasado.
  *
  * <p>En los modos incrementales los pedidos se admiten en orden de política y compiten por cada
  * recurso dentro de su semáforo (FIFO); sirven para demostrar la prevención por orden global y
@@ -252,8 +253,10 @@ public class Dispatcher {
                     continue;
                 }
                 if (!resources.tryAcquireAll(order)) {
-                    // Bloqueado por falta de recursos: los reserva para que nadie menos prioritario lo rebase
-                    reserved.addAll(order.requiredResources());
+                    // Bloqueado: reserva solo el cuello de botella (lo que hoy le falta). Reservar
+                    // también los recursos abundantes frenaría a pedidos sin conflicto real y dejaría
+                    // estaciones ociosas mientras la lista de espera crece.
+                    reserved.addAll(resources.bottlenecksOf(order));
                     continue;
                 }
                 if (!stock.tryReserve(order)) {

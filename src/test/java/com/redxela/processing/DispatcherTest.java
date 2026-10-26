@@ -106,31 +106,35 @@ class DispatcherTest {
     }
 
     @Test
-    void unPedidoBloqueadoReservaSusRecursosPeroNoFrenaALosQueNoLosNecesitan() throws Exception {
+    void unPedidoBloqueadoReservaSoloSuCuelloDeBotellaYNoFrenaALosDemas() throws Exception {
         create(new StrictPriorityPolicy(), 0);
-        Order ocupa = order(DOCUMENTOS, ServiceLevel.ESTANDAR, 80);      // retiene ESCANER + ENCARGADO
+        Order ocupa = order(DOCUMENTOS, ServiceLevel.ESTANDAR, 80);      // retiene ESCANER + ENCARGADO ~400 ms
         dispatcher.submit(ocupa);
         await(() -> ocupa.status() == OrderStatus.EN_PROCESO, 2000, "escáner ocupado");
 
-        // B (Exprés) necesita ESCANER: queda bloqueado y reserva ESCANER, CONTROL_CALIDAD y EMPAQUE
+        // B (Exprés) necesita el ESCANER: queda bloqueado y reserva el cuello de botella (el escáner)
         Order b = order(ELECTRONICO, ServiceLevel.EXPRES, 4, clock.now());
-        // C (Económico) comparte CC y EMPAQUE con B: no debe colarse delante aunque hoy estén libres
-        Order c = order(FRAGIL, ServiceLevel.ECONOMICO, 4, clock.now());
-        // D (Económico) no comparte nada con B: puede aprovechar los recursos libres de inmediato
+        // C (Económico) también necesita el ESCANER: no debe colarse delante del Exprés cuando se libere
+        Order c = order(DOCUMENTOS, ServiceLevel.ECONOMICO, 4, clock.now());
+        // D comparte ENCARGADO con ocupa y C pero no el escáner; E comparte CC y EMPAQUE con B (que están libres):
+        // ninguno tiene conflicto real con el pedido bloqueado, así que aprovechan los recursos libres ya
         Order d = order(PESADO, ServiceLevel.ECONOMICO, 4, clock.now());
+        Order e = order(FRAGIL, ServiceLevel.ECONOMICO, 4, clock.now());
         dispatcher.submit(b);
         dispatcher.submit(c);
         dispatcher.submit(d);
+        dispatcher.submit(e);
 
-        await(() -> d.status() == OrderStatus.EN_PROCESO || d.status() == OrderStatus.COMPLETADO, 2000, "D avanza");
-        assertEquals(OrderStatus.EN_ESPERA, b.status());
+        await(() -> d.status() == OrderStatus.COMPLETADO && e.status() == OrderStatus.COMPLETADO, 3000,
+                "D y E avanzan sin esperar al escáner");
+        assertEquals(OrderStatus.EN_ESPERA, b.status(), "el escáner sigue ocupado por 'ocupa'");
         assertEquals(OrderStatus.EN_ESPERA, c.status(), "C no puede rebasar al Exprés bloqueado");
 
-        await(() -> completed.size() == 4, 20_000, "todos completados");
-        // B y C pueden arrancar en la misma ronda (cada uno marca su inicio desde su propio hilo, de modo
-        // que difieren en microsegundos). Sin la reserva, C habría iniciado ~20 min simulados ANTES que B.
-        assertTrue(c.firstStartedAt() >= b.firstStartedAt() - 1.0,
-                "C no debe iniciar antes que B: B=" + b.firstStartedAt() + " C=" + c.firstStartedAt());
+        await(() -> completed.size() == 5, 20_000, "todos completados");
+        // El escáner es una sola unidad: C solo pudo iniciar cuando B ya había terminado. Sin la reserva,
+        // C habría tomado el escáner en cuanto 'ocupa' lo soltó, antes que B.
+        assertTrue(c.firstStartedAt() >= b.finishedAt() - 1.0,
+                "C no debe iniciar antes de que B termine: C=" + c.firstStartedAt() + " B fin=" + b.finishedAt());
     }
 
     @Test

@@ -6,8 +6,10 @@ import com.redxela.domain.ResourceType;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -57,6 +59,22 @@ public class ResourceManager {
         } finally {
             atomicLock.unlock();
         }
+    }
+
+    /**
+     * De los recursos que el pedido necesita, los que hoy no puede obtener (sin unidades libres o
+     * con otros ya en cola): son el cuello de botella que lo bloquea. Si por una carrera no se
+     * identifica ninguno, se devuelven todos para no subestimar el bloqueo.
+     */
+    public Set<ResourceType> bottlenecksOf(Order order) {
+        Set<ResourceType> missing = EnumSet.noneOf(ResourceType.class);
+        for (ResourceType type : order.requiredResources()) {
+            ResourceSnapshot s = pools.get(type).snapshot();
+            if (s.available() == 0 || !s.waiters().isEmpty()) {
+                missing.add(type);
+            }
+        }
+        return missing.isEmpty() ? EnumSet.copyOf(order.requiredResources()) : missing;
     }
 
     /** Libera todo lo que el pedido tenga, en cualquier pool. Seguro de llamar varias veces. */
