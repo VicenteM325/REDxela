@@ -50,6 +50,7 @@ public class Dispatcher {
     private final EventLog log;
     private final int maxInFlight;
     private final long acquisitionPauseMs;
+    private final StockGate stock;
 
     private final ExecutorService workers;
     private final Map<Long, OrderWorker> running = new ConcurrentHashMap<>();
@@ -69,10 +70,11 @@ public class Dispatcher {
 
     /**
      * @param maxInFlight        tope de pedidos en proceso a la vez (acota los hilos creados)
-     * @param acquisitionPauseMs pausa real entre recursos en los modos incrementales
+     * @param acquisitionPauseMs pausa real entre recursos en los modos de adquisición incremental
+     * @param stock              puerta al inventario: reserva, confirma o devuelve existencias
      */
     public Dispatcher(WaitingList waiting, ResourceManager resources, SimClock clock, EventLog log,
-                      SchedulingPolicy policy, int maxInFlight, long acquisitionPauseMs) {
+                      SchedulingPolicy policy, int maxInFlight, long acquisitionPauseMs, StockGate stock) {
         this.waiting = waiting;
         this.resources = resources;
         this.clock = clock;
@@ -80,11 +82,18 @@ public class Dispatcher {
         this.policy = policy;
         this.maxInFlight = maxInFlight;
         this.acquisitionPauseMs = acquisitionPauseMs;
+        this.stock = stock;
         this.workers = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "redxela-worker-" + workerSeq.incrementAndGet());
             t.setDaemon(true);
             return t;
         });
+    }
+
+    /** Despachador sin control de existencias (todo pedido tiene stock); útil para pruebas aisladas. */
+    public Dispatcher(WaitingList waiting, ResourceManager resources, SimClock clock, EventLog log,
+                      SchedulingPolicy policy, int maxInFlight, long acquisitionPauseMs) {
+        this(waiting, resources, clock, log, policy, maxInFlight, acquisitionPauseMs, StockGate.UNLIMITED);
     }
 
     /** Arranca el hilo despachador (idempotente). */
@@ -212,6 +221,13 @@ public class Dispatcher {
             if (running.size() >= maxInFlight) {
                 return;
             }
+            // Sin existencias el pedido espera al inventario; no bloquea ni reserva recursos de otros
+            if (!stock.hasStock(order)) {
+                markWaitingForStock(order);
+                continue;
+            }
+            markReadyForResources(order);
+
             if (currentMode == AcquisitionMode.ATOMIC) {
                 if (!Collections.disjoint(order.requiredResources(), reserved)) {
                     // Rebasaría a un pedido más prioritario que espera esos recursos: se deja pasar
@@ -224,14 +240,42 @@ public class Dispatcher {
                     reserved.addAll(order.requiredResources());
                     continue;
                 }
+                if (!stock.tryReserve(order)) {
+                    resources.releaseAll(order);          // otro pedido se llevó las existencias
+                    markWaitingForStock(order);
+                    continue;
+                }
                 if (!waiting.remove(order)) {
-                    resources.releaseAll(order); // lo retiraron mientras tanto
+                    stock.release(order);                  // lo retiraron mientras tanto
+                    resources.releaseAll(order);
                     continue;
                 }
                 launch(order, true, currentMode);
-            } else if (waiting.remove(order)) {
+            } else {
+                if (!stock.tryReserve(order)) {
+                    markWaitingForStock(order);
+                    continue;
+                }
+                if (!waiting.remove(order)) {
+                    stock.release(order);
+                    continue;
+                }
                 launch(order, false, currentMode);
             }
+        }
+    }
+
+    private void markWaitingForStock(Order order) {
+        if (order.status() != OrderStatus.ESPERANDO_INVENTARIO) {
+            order.status(OrderStatus.ESPERANDO_INVENTARIO);
+            log.add("SIN_STOCK", "Pedido #" + order.id() + " espera existencias en inventario");
+        }
+    }
+
+    private void markReadyForResources(Order order) {
+        if (order.status() == OrderStatus.ESPERANDO_INVENTARIO) {
+            order.status(OrderStatus.EN_ESPERA);
+            log.add("CON_STOCK", "Pedido #" + order.id() + " ya tiene existencias y vuelve a competir por recursos");
         }
     }
 
@@ -248,15 +292,24 @@ public class Dispatcher {
             running.remove(order.id());
             runningOrders.remove(order.id());
             resources.releaseAll(order);
+            stock.release(order);
             waiting.add(order);
             order.status(OrderStatus.EN_ESPERA);
         }
+    }
+
+    /** El worker terminó de procesar: las unidades reservadas salen definitivamente del almacén. */
+    void commitStock(Order order) {
+        stock.commit(order);
     }
 
     /** Callback del worker al terminar (siempre, aun si falló o fue interrumpido). */
     void workerFinished(Order order, boolean requeue, boolean completed) {
         running.remove(order.id());
         runningOrders.remove(order.id());
+        if (!completed) {
+            stock.release(order);                 // preempción, fallo o cierre: las unidades vuelven a estar disponibles
+        }
         if (requeue) {
             order.resetForRequeue();
             waiting.add(order);

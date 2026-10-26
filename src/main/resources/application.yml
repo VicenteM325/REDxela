@@ -27,3 +27,25 @@ redxela:
   generator:
     rate-per-sim-minute: 1.0
     autostart: false
+  warehouse:
+    # Capacidad total = pasillos x niveles x posiciones x capacidad por ubicación (5x4x4x25 = 2000 u.)
+    aisles: 5
+    levels: 4
+    positions: 4
+    slot-capacity: 25
+  inventory:
+    # Tiempo (simulado) que Inventario tarda en registrar un lote: base + por unidad
+    base-minutes: 0.2
+    minutes-per-unit: 0.02
+    initial-stock-per-product: 60
+  reception:
+    # Capacidad del canal Recepción -> Inventario y tiempo de escaneo de cada lote
+    queue-capacity: 10
+    scan-minutes: 0.2
+    timeout-ms: 3000
+  restock:
+    # Reposición automática (proveedores simulados)
+    autostart: false
+    check-every-minutes: 5
+    reorder-point: 30
+    lot-size: 100

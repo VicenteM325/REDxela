@@ -2,6 +2,7 @@ package com.redxela.api;
 
 import com.redxela.auth.EmailAlreadyRegisteredException;
 import com.redxela.auth.InvalidCredentialsException;
+import com.redxela.reception.ReceptionOverloadedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,21 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<Map<String, String>> notFound(NotFoundException e) {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    /** Inventario o el escáner no dieron abasto: el lote no se aceptó, pero tampoco se perdió. */
+    @ExceptionHandler({ReceptionOverloadedException.class, InterruptedException.class})
+    public ResponseEntity<Map<String, String>> overloaded(Exception e) {
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
+        return error(HttpStatus.SERVICE_UNAVAILABLE, e instanceof ReceptionOverloadedException
+                ? e.getMessage() : "Operación interrumpida");
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<Map<String, String>> conflictState(ConflictException e) {
+        return error(HttpStatus.CONFLICT, e.getMessage());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

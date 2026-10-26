@@ -84,6 +84,9 @@ final class OrderWorker implements Runnable {
             log.add("INICIO", "Pedido #" + order.id() + " (" + order.serviceLevel().displayName() + ", "
                     + order.totalUnits() + " u.) usa " + order.requiredResources());
             doWork();
+            // Primero salen las unidades del almacén y solo después el pedido pasa a COMPLETADO, para
+            // que nadie observe un pedido completado cuyas existencias aún no se descontaron
+            dispatcher.commitStock(order);
             order.progress(1.0);
             order.finishedAt(clock.now());
             order.status(OrderStatus.COMPLETADO);
