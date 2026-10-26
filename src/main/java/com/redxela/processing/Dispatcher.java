@@ -192,6 +192,16 @@ public class Dispatcher {
         return List.copyOf(runningOrders.values());
     }
 
+    /**
+     * Pedidos que hoy compiten por recursos o los usan: los que están en proceso más los de la lista
+     * de espera que no están detenidos esperando existencias.
+     */
+    public int activeOrderCount() {
+        long waitingForResources = waiting.snapshot().stream()
+                .filter(o -> o.status() != OrderStatus.ESPERANDO_INVENTARIO).count();
+        return running.size() + (int) waitingForResources;
+    }
+
     public WaitingList waitingList() {
         return waiting;
     }

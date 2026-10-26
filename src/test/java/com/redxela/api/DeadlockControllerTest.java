@@ -1,6 +1,9 @@
 package com.redxela.api;
 
 import com.jayway.jsonpath.JsonPath;
+import com.redxela.domain.*;
+import com.redxela.inventory.InventoryArea;
+import com.redxela.persistence.CatalogRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -25,6 +28,10 @@ class DeadlockControllerTest {
 
     @Autowired
     MockMvc mvc;
+    @Autowired
+    InventoryArea inventory;
+    @Autowired
+    CatalogRepository catalog;
 
     private String cuerpo(String path) throws Exception {
         return mvc.perform(get(path)).andReturn().getResponse().getContentAsString();
@@ -88,5 +95,52 @@ class DeadlockControllerTest {
                 .andExpect(jsonPath("$.orderIds", hasSize(6)));
         Thread.sleep(300);
         mvc.perform(get("/api/deadlock")).andExpect(jsonPath("$.active", is(false)));
+    }
+
+    /**
+     * Si el producto del escenario está casi agotado, el escenario hace llegar mercadería por Recepción y
+     * espera a que se registre ANTES de crear los pedidos; si no, arrancarían escalonados y no habría ciclo.
+     */
+    @Test
+    void elEscenarioDeDeadlockSeFormaAunConElStockAgotado() throws Exception {
+        Product pesado = catalog.findProducts().stream()
+                .filter(p -> p.merchandiseType().code().equals("PESADO")).findFirst().orElseThrow();
+        int disponible = inventory.stock().stream().filter(x -> x.product().id() == pesado.id())
+                .mapToInt(InventoryArea.ProductStock::available).findFirst().orElseThrow();
+        // Un pedido ficticio se lleva casi todas las unidades (sale del almacén, sin pasar por el despachador)
+        Customer c = new Customer(1, "t", "t@t", "x", ServiceLevel.ESTANDAR);
+        Order consumo = new Order(900_000, c, ServiceLevel.ESTANDAR,
+                List.of(new OrderItem(pesado, disponible - 2)), 0, 1);
+        assertTrue(inventory.tryReserve(consumo));
+        inventory.commit(consumo);
+
+        String res = mvc.perform(post("/api/scenarios/deadlock")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<Integer> ids = JsonPath.read(res, "$.orderIds");
+
+        long limite = System.currentTimeMillis() + 15_000;
+        boolean activo = false;
+        while (!activo && System.currentTimeMillis() < limite) {
+            Thread.sleep(50);
+            activo = JsonPath.read(cuerpo("/api/deadlock"), "$.active");
+        }
+        assertTrue(activo, "el ciclo debe formarse aunque faltara stock al armar el escenario");
+
+        mvc.perform(post("/api/deadlock/resolve").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"keepOrderId\":" + ids.get(0) + "}")).andExpect(status().isOk());
+        limite = System.currentTimeMillis() + 30_000;
+        boolean todos = false;
+        while (!todos && System.currentTimeMillis() < limite) {
+            Thread.sleep(100);
+            todos = ids.stream().allMatch(id -> {
+                try {
+                    return "COMPLETADO".equals(JsonPath.read(cuerpo("/api/orders/" + id), "$.status"));
+                } catch (Exception e) {
+                    return false;
+                }
+            });
+        }
+        assertTrue(todos);
+        mvc.perform(put("/api/mode").contentType(MediaType.APPLICATION_JSON).content("{\"mode\":\"ATOMIC\"}"));
     }
 }

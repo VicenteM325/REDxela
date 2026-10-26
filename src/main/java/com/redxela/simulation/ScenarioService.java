@@ -22,10 +22,12 @@ public class ScenarioService {
 
     /** Resultado de armar un escenario. */
     public record ScenarioResult(String scenario, String description, String acquisitionMode, List<Long> orderIds,
-                                 boolean generatorStopped) {
+                                 boolean generatorStopped, String warning) {
     }
 
     private static final int UNITS = 4;
+    /** Plazo real máximo para que el reabastecimiento pedido a Recepción llegue al almacén. */
+    private static final long RESTOCK_WAIT_MS = 5000;
 
     private final OrderService orders;
     private final OrderGenerator generator;
@@ -56,6 +58,11 @@ public class ScenarioService {
         boolean wasRunning = generator.isRunning();
         generator.stop();
         dispatcher.setMode(AcquisitionMode.NATURAL);
+        String warning = busyWarning();
+        // Se asegura el stock de ambos tipos ANTES de crear ningún pedido: si alguno esperara existencias
+        // arrancaría escalonado y el entrelazado que forma el ciclo no se produciría
+        ensureStock("PESADO", 3);
+        ensureStock("VOLUMINOSO", 2);
         List<Long> ids = new ArrayList<>();
         ids.addAll(submit("PESADO", 3));
         ids.addAll(submit("VOLUMINOSO", 2));
@@ -63,7 +70,7 @@ public class ScenarioService {
         return new ScenarioResult("deadlock",
                 "3 pedidos pesados retienen los montacargas y esperan el área de carga; 2 voluminosos retienen "
                         + "el área de carga y esperan montacargas. Espere unos segundos a que se forme el ciclo.",
-                dispatcher.mode().name(), ids, wasRunning);
+                dispatcher.mode().name(), ids, wasRunning, warning);
     }
 
     /**
@@ -73,6 +80,8 @@ public class ScenarioService {
      */
     public ScenarioResult provokeContention() throws InterruptedException {
         dispatcher.setMode(AcquisitionMode.ATOMIC);
+        ensureStock("PESADO", 3);
+        ensureStock("VOLUMINOSO", 3);
         List<Long> ids = new ArrayList<>();
         ids.addAll(submit("PESADO", 3));
         ids.addAll(submit("VOLUMINOSO", 3));
@@ -80,24 +89,52 @@ public class ScenarioService {
         return new ScenarioResult("contention",
                 "3 pedidos pesados y 3 voluminosos necesitan montacargas y área de carga a la vez: los que no "
                         + "alcanzan pasan a la lista de espera.",
-                dispatcher.mode().name(), ids, false);
+                dispatcher.mode().name(), ids, false, null);
     }
 
-    /** Crea {@code count} pedidos Exprés de un tipo de mercancía, asegurando existencias suficientes. */
-    private List<Long> submit(String typeCode, int count) throws InterruptedException {
-        Product product = catalog.findProducts().stream()
+    /** Aviso si hay otros pedidos compitiendo por recursos, que pueden alterar el entrelazado del escenario. */
+    private String busyWarning() {
+        int active = dispatcher.activeOrderCount();
+        return active == 0 ? null : "Hay " + active + " pedidos en curso o en espera de recursos; para un escenario "
+                + "limpio detenga el generador y espere a que el sistema se vacíe.";
+    }
+
+    /** Producto con que se arma el escenario para un tipo de mercancía. */
+    private Product productOf(String typeCode) {
+        return catalog.findProducts().stream()
                 .filter(p -> p.merchandiseType().code().equals(typeCode)).findFirst()
                 .orElseThrow(() -> new IllegalStateException("No hay productos del tipo " + typeCode));
+    }
+
+    /**
+     * Garantiza existencias para {@code count} pedidos del tipo: si faltan, hace llegar mercadería por
+     * Recepción y espera a que Inventario la registre, de modo que todos los pedidos puedan iniciar a la vez.
+     */
+    private void ensureStock(String typeCode, int count) throws InterruptedException {
+        Product product = productOf(typeCode);
         int needed = count * UNITS;
-        int available = inventory.stock().stream().filter(s -> s.product().id() == product.id())
-                .mapToInt(InventoryArea.ProductStock::available).findFirst().orElse(0);
-        if (available < needed) {
-            try {
-                reception.receive(product.id(), needed * 3);   // reponer por Recepción para que los pedidos no esperen stock
-            } catch (ReceptionOverloadedException e) {
-                // Los pedidos esperarán existencias hasta que llegue la mercadería
-            }
+        if (availableOf(product) >= needed) {
+            return;
         }
+        try {
+            reception.receive(product.id(), needed * 3);
+        } catch (ReceptionOverloadedException e) {
+            return;               // los pedidos esperarán existencias hasta que llegue la mercadería
+        }
+        long limit = System.currentTimeMillis() + RESTOCK_WAIT_MS;
+        while (availableOf(product) < needed && System.currentTimeMillis() < limit) {
+            Thread.sleep(25);
+        }
+    }
+
+    private int availableOf(Product product) {
+        return inventory.stock().stream().filter(s -> s.product().id() == product.id())
+                .mapToInt(InventoryArea.ProductStock::available).findFirst().orElse(0);
+    }
+
+    /** Crea {@code count} pedidos Exprés de un tipo de mercancía. */
+    private List<Long> submit(String typeCode, int count) {
+        Product product = productOf(typeCode);
         List<Long> ids = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             Order o = orders.create(generator.systemCustomer(ServiceLevel.EXPRES), ServiceLevel.EXPRES,

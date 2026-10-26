@@ -32,6 +32,11 @@ public class WaitingList {
         return orders.contains(order);
     }
 
+    /** Copia de la lista sin ordenar. */
+    public synchronized List<Order> snapshot() {
+        return new ArrayList<>(orders);
+    }
+
     /** Hay en la lista un pedido con ese id. */
     public synchronized boolean containsId(long id) {
         for (Order o : orders) {
