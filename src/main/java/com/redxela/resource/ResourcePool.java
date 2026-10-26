@@ -91,7 +91,17 @@ public class ResourcePool {
                 throw new IllegalStateException("El dueño " + ownerId + " ya tiene " + type);
             }
         }
-        if (!semaphore.tryAcquire()) {
+        // Se usa la variante con plazo (0 ms) porque, a diferencia de tryAcquire() sin plazo, respeta
+        // la cola FIFO del semáforo justo: así quien intenta sin bloquear (el despachador) no se
+        // cuela delante de quien ya espera (p. ej. un lote de Recepción) y lo deja sin atender nunca.
+        boolean got;
+        try {
+            got = semaphore.tryAcquire(0, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        if (!got) {
             return false;
         }
         synchronized (registryLock) {

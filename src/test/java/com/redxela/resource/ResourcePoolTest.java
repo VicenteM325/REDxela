@@ -139,4 +139,32 @@ class ResourcePoolTest {
         scanner.release(-1L);
         assertEquals(1, scanner.snapshot().available());
     }
+
+    /** Un intento sin bloquear (despachador) no debe adelantarse a quien ya espera en la cola (Recepción). */
+    @Test
+    void tryAcquireSinPlazoNoSeCuelaDelanteDeQuienYaEspera() throws Exception {
+        ResourcePool scanner = new ResourcePool(ResourceType.ESCANER);
+        Order despacho = newOrder(), otro = newOrder();
+        assertTrue(scanner.tryAcquire(despacho));
+
+        CountDownLatch lotTermino = new CountDownLatch(1);
+        Thread lote = new Thread(() -> {
+            try {
+                if (scanner.tryAcquire(-7L, 5000)) {
+                    lotTermino.countDown();
+                }
+            } catch (InterruptedException ignored) {
+            }
+        });
+        lote.start();
+        long limite = System.currentTimeMillis() + 5000;
+        while (scanner.snapshot().waiters().isEmpty() && System.currentTimeMillis() < limite) Thread.sleep(2);
+
+        scanner.release(despacho);
+        // El permiso ya está libre, pero el lote es el primero de la cola: el intento sin bloquear debe fallar
+        assertFalse(scanner.tryAcquire(otro), "no debe colarse delante del lote que espera");
+        assertTrue(lotTermino.await(5, TimeUnit.SECONDS), "el lote obtiene el escáner");
+        assertEquals(List.of(-7L), scanner.snapshot().holders());
+        lote.join(2000);
+    }
 }
