@@ -94,4 +94,12 @@ class SimulationControllerTest {
         mvc.perform(post("/api/stats/reset")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.completed", is(0)));
     }
+
+    @Test
+    void losErroresEstandarDeMvcConservanSuCodigoHttp() throws Exception {
+        mvc.perform(post("/api/reception/auto-restock")).andExpect(status().isMethodNotAllowed());
+        mvc.perform(put("/api/policy").contentType(MediaType.TEXT_PLAIN).content("x"))
+                .andExpect(status().isUnsupportedMediaType());
+        mvc.perform(get("/api/no-existe")).andExpect(status().isNotFound());
+    }
 }

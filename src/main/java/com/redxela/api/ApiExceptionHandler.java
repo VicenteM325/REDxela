@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -84,6 +85,12 @@ public class ApiExceptionHandler {
     /** Red de seguridad: se registra el detalle y no se filtra al cliente. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> unexpected(Exception e) {
+        // Las excepciones estándar de Spring MVC (405 método no permitido, 415 tipo no soportado,
+        // parámetro faltante…) ya traen su propio código HTTP: se respeta en lugar de convertirlo en 500
+        if (e instanceof ErrorResponse standard) {
+            HttpStatus status = HttpStatus.resolve(standard.getStatusCode().value());
+            return error(status != null ? status : HttpStatus.BAD_REQUEST, "Solicitud no válida");
+        }
         log.error("Error inesperado", e);
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno del servidor");
     }
