@@ -84,4 +84,14 @@ class SimulationControllerTest {
                 .andExpect(jsonPath("$[?(@.type=='POLITICA')]", not(empty())));
         enviarPut("/api/policy", "{\"id\":\"AGING\"}", 200);
     }
+
+    @Test
+    void exponeLasEstadisticasGeneralesYSePuedenReiniciar() throws Exception {
+        mvc.perform(get("/api/stats")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.levels", hasSize(5)))
+                .andExpect(jsonPath("$.resources", hasSize(6)))
+                .andExpect(jsonPath("$.completed", is(greaterThanOrEqualTo(0))));
+        mvc.perform(post("/api/stats/reset")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.completed", is(0)));
+    }
 }

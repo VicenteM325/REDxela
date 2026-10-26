@@ -15,6 +15,7 @@ import com.redxela.resource.ResourceManager;
 import com.redxela.scheduler.SchedulingPolicies;
 import com.redxela.scheduler.SchedulingPolicy;
 import com.redxela.scheduler.WaitingList;
+import com.redxela.stats.StatsCollector;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -113,10 +114,16 @@ public class SimulationConfig {
         return restocker;
     }
 
+    @Bean(initMethod = "start", destroyMethod = "stop")
+    public StatsCollector statsCollector(SimClock clock, ResourceManager resources,
+                                         @Value("${redxela.stats.sample-period-ms:100}") long samplePeriodMs) {
+        return new StatsCollector(clock, resources, samplePeriodMs);
+    }
+
     /** El despachador arranca y se detiene con el contexto de Spring. */
     @Bean(initMethod = "start", destroyMethod = "stop")
     public Dispatcher dispatcher(WaitingList waiting, ResourceManager resources, SimClock clock, EventLog log,
-                                 InventoryArea inventory,
+                                 InventoryArea inventory, StatsCollector stats,
                                  @Value("${redxela.dispatcher.policy:AGING}") String policyId,
                                  @Value("${redxela.dispatcher.max-in-flight:40}") int maxInFlight,
                                  @Value("${redxela.dispatcher.acquisition-pause-ms:400}") long acquisitionPauseMs) {
@@ -126,6 +133,7 @@ public class SimulationConfig {
                 acquisitionPauseMs, inventory);
         // Cuando llega mercadería, el despachador reevalúa los pedidos que esperaban existencias
         inventory.addStockListener(dispatcher::signal);
+        dispatcher.addCompletionListener(stats::onCompleted);
         return dispatcher;
     }
 
