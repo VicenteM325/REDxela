@@ -386,6 +386,65 @@ function bindControls() {
   });
 }
 
+// ------------------------------------------------------------ comparador
+
+let comparePoll = null;
+
+function renderCompare(c) {
+  const status = $('#compare-status');
+  if (c.state === 'RUNNING') {
+    setText(status, `Comparando… ${c.policiesDone}/${c.policiesTotal}` + (c.currentPolicy ? ` · ahora: ${c.currentPolicy}` : ''));
+  } else if (c.state === 'FAILED') {
+    setText(status, 'La comparación falló: ' + (c.error || 'error desconocido'));
+  } else if (c.state === 'DONE') {
+    const p = c.params;
+    setText(status, `Listo · ${p.horizonMinutes} min simulados, ${p.ratePerMinute} pedidos/min, semilla ${p.seed}`);
+  } else {
+    setText(status, 'Aún no se ha ejecutado ninguna comparación.');
+  }
+  setHtml($('#compare-rows'), c.results.map((r) => {
+    const best = c.state === 'DONE' && r.policyId === c.best;
+    const levels = r.levels.map((l) => l.arrived ? num(l.averageWaitMinutes) : '–').join(' · ');
+    return `<tr${best ? ' style="font-weight:700"' : ''}>
+      <td>${best ? '★ ' : ''}${esc(r.name)}</td>
+      <td class="num">${r.arrived}</td><td class="num">${r.completed}</td>
+      <td class="num">${num(r.averageWaitMinutes)} min</td><td class="num">${num(r.maxWaitMinutes)} min</td>
+      <td class="num">${num(r.slaCompliancePct, 0)} %</td><td class="num">${num(r.throughputPerMinute, 2)}</td>
+      <td>${levels}</td></tr>`;
+  }).join('') || '<tr class="empty"><td colspan="8">Sin resultados</td></tr>');
+}
+
+async function pollCompare() {
+  try {
+    const c = await api('/api/compare');
+    renderCompare(c);
+    if (c.state !== 'RUNNING' && comparePoll) {
+      clearInterval(comparePoll);
+      comparePoll = null;
+      $('#compare-form button').disabled = false;
+      if (c.state === 'DONE') toast('Comparación terminada: ★ marca la mejor por cumplimiento');
+    }
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function bindCompare() {
+  $('#compare-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const started = await run($('button', f), () => api('/api/compare', { method: 'POST', body: {
+      horizonMinutes: Number(f.elements.horizonMinutes.value), ratePerMinute: Number(f.elements.ratePerMinute.value),
+      seed: Number(f.elements.seed.value) } }));
+    if (started) {
+      $('button', f).disabled = true;
+      renderCompare(started);
+      if (!comparePoll) comparePoll = setInterval(pollCompare, 1000);
+    }
+  });
+  pollCompare();   // muestra el último resultado si ya hubo una comparación
+}
+
 // ------------------------------------------------------------- recepción
 
 function bindReception() {
@@ -516,6 +575,7 @@ async function init() {
   bindControls();
   bindReception();
   bindAccount();
+  bindCompare();
   try {
     const [products, types, levels, policies] = await Promise.all([
       api('/api/products'), api('/api/merchandise-types'), api('/api/service-levels'), api('/api/policies')]);
