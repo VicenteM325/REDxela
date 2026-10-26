@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Conjunto de unidades idénticas de un recurso (p. ej. los 3 montacargas), controlado con un
@@ -18,7 +19,9 @@ import java.util.concurrent.Semaphore;
  * con un monitor propio, que <strong>nunca</strong> se mantiene mientras se bloquea en el
  * semáforo (si no, nadie podría liberar ni consultar el estado).
  *
- * <p>Cada pedido usa como máximo una unidad de cada recurso.
+ * <p>Cada dueño (un pedido, o un lote en recepción) usa como máximo una unidad de cada recurso.
+ * Los pedidos se identifican por su id (positivo); los lotes de recepción usan ids negativos para
+ * que la interfaz pueda distinguirlos.
  */
 public class ResourcePool {
 
@@ -40,38 +43,59 @@ public class ResourcePool {
      *                              un deadlock); en ese caso no queda ningún permiso tomado
      */
     public void acquire(Order order) throws InterruptedException {
-        synchronized (registryLock) {
-            if (holders.contains(order.id())) {
-                throw new IllegalStateException("El pedido " + order.id() + " ya tiene " + type);
-            }
-            waiters.add(order.id());
-        }
+        acquire(order.id());
+    }
+
+    /** Igual que {@link #acquire(Order)} para un dueño identificado solo por su id. */
+    public void acquire(long ownerId) throws InterruptedException {
+        registerWaiter(ownerId);
         try {
             semaphore.acquire();
         } catch (InterruptedException e) {
-            synchronized (registryLock) {
-                waiters.remove(order.id());
-            }
+            unregisterWaiter(ownerId);
             throw e;
         }
-        synchronized (registryLock) {
-            waiters.remove(order.id());
-            holders.add(order.id());
+        promoteToHolder(ownerId);
+    }
+
+    /**
+     * Toma una unidad esperando como máximo {@code timeoutMs} milisegundos reales.
+     *
+     * @return {@code true} si la obtuvo; {@code false} si venció el plazo (no queda nada tomado)
+     */
+    public boolean tryAcquire(long ownerId, long timeoutMs) throws InterruptedException {
+        registerWaiter(ownerId);
+        boolean got;
+        try {
+            got = semaphore.tryAcquire(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            unregisterWaiter(ownerId);
+            throw e;
         }
+        if (!got) {
+            unregisterWaiter(ownerId);
+            return false;
+        }
+        promoteToHolder(ownerId);
+        return true;
     }
 
     /** Intenta tomar una unidad sin bloquear. @return {@code true} si la obtuvo */
     public boolean tryAcquire(Order order) {
+        return tryAcquire(order.id());
+    }
+
+    public boolean tryAcquire(long ownerId) {
         synchronized (registryLock) {
-            if (holders.contains(order.id())) {
-                throw new IllegalStateException("El pedido " + order.id() + " ya tiene " + type);
+            if (holders.contains(ownerId)) {
+                throw new IllegalStateException("El dueño " + ownerId + " ya tiene " + type);
             }
         }
         if (!semaphore.tryAcquire()) {
             return false;
         }
         synchronized (registryLock) {
-            holders.add(order.id());
+            holders.add(ownerId);
         }
         return true;
     }
@@ -81,9 +105,13 @@ public class ResourcePool {
      * evita inflar el semáforo cuando se libera dos veces (p. ej. rollback + bloque finally).
      */
     public void release(Order order) {
+        release(order.id());
+    }
+
+    public void release(long ownerId) {
         boolean wasHolder;
         synchronized (registryLock) {
-            wasHolder = holders.remove(order.id());
+            wasHolder = holders.remove(ownerId);
         }
         if (wasHolder) {
             semaphore.release();
@@ -93,6 +121,28 @@ public class ResourcePool {
     public boolean isHeldBy(Order order) {
         synchronized (registryLock) {
             return holders.contains(order.id());
+        }
+    }
+
+    private void registerWaiter(long ownerId) {
+        synchronized (registryLock) {
+            if (holders.contains(ownerId)) {
+                throw new IllegalStateException("El dueño " + ownerId + " ya tiene " + type);
+            }
+            waiters.add(ownerId);
+        }
+    }
+
+    private void unregisterWaiter(long ownerId) {
+        synchronized (registryLock) {
+            waiters.remove(ownerId);
+        }
+    }
+
+    private void promoteToHolder(long ownerId) {
+        synchronized (registryLock) {
+            waiters.remove(ownerId);
+            holders.add(ownerId);
         }
     }
 

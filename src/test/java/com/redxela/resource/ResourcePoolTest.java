@@ -120,4 +120,23 @@ class ResourcePoolTest {
         assertTrue(pool.tryAcquire(a));
         assertThrows(IllegalStateException.class, () -> pool.tryAcquire(a));
     }
+
+    @Test
+    void laEsperaConTiempoLimiteVenceSinDejarRastro() throws Exception {
+        ResourcePool scanner = new ResourcePool(ResourceType.ESCANER);
+        Order a = newOrder();
+        assertTrue(scanner.tryAcquire(a));
+
+        long t0 = System.currentTimeMillis();
+        assertFalse(scanner.tryAcquire(-1L, 80));            // un lote de recepción (id negativo)
+        assertTrue(System.currentTimeMillis() - t0 >= 70);
+        assertTrue(scanner.snapshot().waiters().isEmpty());
+        assertEquals(List.of(a.id()), scanner.snapshot().holders());
+
+        scanner.release(a);
+        assertTrue(scanner.tryAcquire(-1L, 80));
+        assertEquals(List.of(-1L), scanner.snapshot().holders());
+        scanner.release(-1L);
+        assertEquals(1, scanner.snapshot().available());
+    }
 }
