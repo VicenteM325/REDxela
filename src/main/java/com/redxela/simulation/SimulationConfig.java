@@ -145,6 +145,11 @@ public class SimulationConfig {
         return new DeadlockDetector(resources, dispatcher, clock, log, periodMs);
     }
 
+    @Bean(destroyMethod = "stop")
+    public PolicyComparator policyComparator(CatalogRepository catalog, WorkEstimator estimator) {
+        return new PolicyComparator(catalog, estimator);
+    }
+
     @Bean
     public ScenarioService scenarioService(OrderService orders, OrderGenerator generator, Dispatcher dispatcher,
                                            CatalogRepository catalog, InventoryArea inventory,
