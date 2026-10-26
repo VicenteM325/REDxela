@@ -1,0 +1,11 @@
+target/
+data/
+*.mv.db
+*.trace.db
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+Proyecto Final.pdf
