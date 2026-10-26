@@ -12,3 +12,18 @@ spring:
   sql:
     init:
       mode: always
+
+redxela:
+  simulation:
+    # Milisegundos reales que dura un minuto simulado (a velocidad 1x) y trabajo por unidad
+    ms-per-sim-minute: 1000
+    minutes-per-unit: 0.25
+  dispatcher:
+    # AGING | STRICT_PRIORITY | SHORTEST_FIRST | FCFS
+    policy: AGING
+    max-in-flight: 40
+    # Pausa real entre recursos en los modos de adquisición incremental (ORDERED/NATURAL)
+    acquisition-pause-ms: 400
+  generator:
+    rate-per-sim-minute: 1.0
+    autostart: false

@@ -10,6 +10,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -39,9 +43,26 @@ public class ApiExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, detail);
     }
 
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<Map<String, String>> notFound(NotFoundException e) {
+        return error(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> badRequest(IllegalArgumentException e) {
         return error(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    /** JSON malformado, parámetros fuera de rango o de tipo incorrecto: error del cliente, no del servidor. */
+    @ExceptionHandler({HttpMessageNotReadableException.class, HandlerMethodValidationException.class,
+            MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<Map<String, String>> malformed(Exception e) {
+        return error(HttpStatus.BAD_REQUEST, "Solicitud inválida");
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> noResource(NoResourceFoundException e) {
+        return error(HttpStatus.NOT_FOUND, "Recurso inexistente");
     }
 
     /** Red de seguridad: se registra el detalle y no se filtra al cliente. */

@@ -127,7 +127,10 @@ class DispatcherTest {
         assertEquals(OrderStatus.EN_ESPERA, c.status(), "C no puede rebasar al Exprés bloqueado");
 
         await(() -> completed.size() == 4, 20_000, "todos completados");
-        assertTrue(b.firstStartedAt() <= c.firstStartedAt(), "B inicia antes o a la vez que C");
+        // B y C pueden arrancar en la misma ronda (cada uno marca su inicio desde su propio hilo, de modo
+        // que difieren en microsegundos). Sin la reserva, C habría iniciado ~20 min simulados ANTES que B.
+        assertTrue(c.firstStartedAt() >= b.firstStartedAt() - 1.0,
+                "C no debe iniciar antes que B: B=" + b.firstStartedAt() + " C=" + c.firstStartedAt());
     }
 
     @Test
