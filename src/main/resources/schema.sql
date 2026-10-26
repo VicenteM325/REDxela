@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS orders (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
     customer_id      BIGINT      NOT NULL REFERENCES customer(id),
     service_level    INT         NOT NULL,
-    merchandise_type VARCHAR(30) NOT NULL REFERENCES merchandise_type(code),
     total_units      INT         NOT NULL,
     status           VARCHAR(30) NOT NULL,
     created_at       TIMESTAMP   NOT NULL,
