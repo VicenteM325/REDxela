@@ -455,12 +455,13 @@ function bindAccount() {
   $('#register-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.currentTarget;
+    // f.elements: en un <form>, f.name es el atributo del propio formulario y taparía al campo "name"
     const created = await run($('button', f), () => api('/api/auth/register', { method: 'POST', body: {
-      name: f.name.value, email: f.email.value, password: f.password.value,
-      serviceLevel: Number(f.serviceLevel.value) } }), 'Cuenta creada');
+      name: f.elements.name.value, email: f.elements.email.value, password: f.elements.password.value,
+      serviceLevel: Number(f.elements.serviceLevel.value) } }), 'Cuenta creada');
     if (created) {
       const res = await run(null, () => api('/api/auth/login', { method: 'POST', body: {
-        email: f.email.value, password: f.password.value } }));
+        email: f.elements.email.value, password: f.elements.password.value } }));
       if (res) { saveSession(res); f.reset(); showSession(); }
     }
   });
